@@ -1,1 +1,181 @@
+-- v1becode | UI test v0.3
+local Players = game:GetService("Players")
+local Player = Players.LocalPlayer
+assert(Player, "[v1becode] LocalPlayer unavailable")
+
+local Env = _G
+if type(getgenv) == "function" then
+    local ok, value = pcall(getgenv)
+    if ok and type(value) == "table" then Env = value end
+end
+local Key = "__v1becode_UI_State"
+local State = Env[Key]
+if type(State) ~= "table" then State = {}; Env[Key] = State end
+if State.Library then
+    pcall(function() State.Library:Unload() end)
+    State.Library = nil
+end
+
+local Library = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/Library.lua"
+))()
+State.Library = Library
+local Options = Library.Options
+
+local function Escape(value)
+    local text = tostring(value)
+    text = text:gsub("&", "&amp;")
+    text = text:gsub("<", "&lt;")
+    text = text:gsub(">", "&gt;")
+    return text
+end
+local function Count(value)
+    local n = tonumber(value)
+    if not n or n ~= n or n == math.huge or n == -math.huge or n < 0 then
+        return 0
+    end
+    return math.floor(n)
+end
+
+local Executor = "Unknown (identifyexecutor unavailable)"
+if type(identifyexecutor) == "function" then
+    local ok, name, version = pcall(identifyexecutor)
+    if ok and type(name) == "string" and name ~= "" then
+        Executor = name
+        if version ~= nil and tostring(version) ~= "" then
+            Executor = Executor .. " " .. tostring(version)
+        end
+    elseif not ok then
+        Executor = "Unknown (identifyexecutor failed)"
+    end
+end
+
+if type(State.Counts) ~= "table" then State.Counts = {} end
+local UserKey = tostring(Player.UserId)
+local Filename = "v1becode_executions_" .. UserKey .. ".txt"
+local Previous = Count(State.Counts[UserKey])
+if type(readfile) == "function" then
+    local ok, content = pcall(readfile, Filename)
+    if ok then Previous = math.max(Previous, Count(content)) end
+end
+local Executions = Previous + 1
+State.Counts[UserKey] = Executions
+local Saved = false
+if type(writefile) == "function" then
+    Saved = pcall(writefile, Filename, tostring(Executions))
+end
+
+local Window = Library:CreateWindow({
+    Title = "v1becode",
+    Footer = "UI Test | v0.3",
+    Center = true,
+    AutoShow = true,
+    Resizable = true,
+    NotifySide = "Right",
+    ShowCustomCursor = true,
+})
+local Tabs = {
+    Main = Window:AddTab("Main", "house"),
+    Aimbot = Window:AddTab("Aimbot", "crosshair"),
+    Visual = Window:AddTab("Visual", "eye"),
+    Movement = Window:AddTab("Movement", "move"),
+    Setting = Window:AddTab("Setting", "settings"),
+}
+
+-- Render text FIRST. Image/API failures must not interrupt user information.
+local Info = Tabs.Main:AddGroupbox({ Side = "Right", Name = "User Info" })
+Info:AddLabel("Display name: " .. Escape(Player.DisplayName), true)
+Info:AddLabel("Username: @" .. Escape(Player.Name), true)
+Info:AddLabel("User ID: " .. tostring(Player.UserId))
+Info:AddDivider()
+Info:AddLabel("Total executions: " .. tostring(Executions))
+Info:AddLabel("Executor: " .. Escape(Executor), true)
+Info:AddLabel(
+    Saved and type(readfile) == "function"
+        and "Counter: saved locally"
+        or "Counter: current executor environment only",
+    true
+)
+
+local Main = Tabs.Main:AddGroupbox({ Side = "Left", Name = "Main" })
+Main:AddLabel("v1becode - test build")
+Main:AddLabel("No gameplay features enabled.", true)
+Main:AddButton({
+    Text = "Test button",
+    Func = function() print("[v1becode] Test button works.") end,
+})
+
+local Aim = Tabs.Aimbot:AddGroupbox({ Side = "Left", Name = "Aimbot" })
+Aim:AddLabel("Placeholder - no aiming logic.", true)
+local Visual = Tabs.Visual:AddGroupbox({ Side = "Left", Name = "Visual" })
+Visual:AddLabel("Placeholder - no visual effects.", true)
+local Movement = Tabs.Movement:AddGroupbox({ Side = "Left", Name = "Movement" })
+Movement:AddLabel("Placeholder - no movement changes.", true)
+
+local Settings = Tabs.Setting:AddGroupbox({ Side = "Left", Name = "Menu" })
+Settings:AddLabel("Show / hide menu"):AddKeyPicker("MenuKeybind", {
+    Default = "RightShift",
+    NoUI = true,
+    Text = "Menu keybind",
+})
+Library.ToggleKeybind = Options.MenuKeybind
+Settings:AddButton({
+    Text = "Unload menu",
+    Func = function() Library:Unload() end,
+})
+Library:OnUnload(function()
+    if State.Library == Library then State.Library = nil end
+end)
+
+-- Avatar is optional and isolated from the rest of the interface.
+task.spawn(function()
+    local ok, err = pcall(function()
+        if Library.Unloaded then return end
+        if type(Info.AddImage) ~= "function" then
+            Info:AddLabel("Avatar unavailable: this library has no AddImage.", true)
+            warn("[v1becode] Loaded Obsidian version has no AddImage method.")
+            return
+        end
+        local Image = Info:AddImage("UserAvatar", {
+            Image = "",
+            Height = 240,
+            BackgroundTransparency = 1,
+            ScaleType = Enum.ScaleType.Fit,
+        })
+        local Content, Ready
+        for attempt = 1, 5 do
+            if Library.Unloaded then return end
+            local fetched, url, ready = pcall(function()
+                return Players:GetUserThumbnailAsync(
+                    Player.UserId,
+                    Enum.ThumbnailType.AvatarThumbnail,
+                    Enum.ThumbnailSize.Size420x420
+                )
+            end)
+            if fetched and type(url) == "string" and url ~= "" then
+                Content, Ready = url, ready
+            end
+            if Ready then break end
+            if attempt < 5 then task.wait(1) end
+        end
+        if Library.Unloaded then return end
+        if Content then
+            Image:SetImage(Content)
+            if not Ready then
+                Info:AddLabel("Avatar thumbnail is still processing.", true)
+            end
+        else
+            Info:AddLabel("Avatar thumbnail could not be loaded.", true)
+        end
+    end)
+    if not ok then
+        warn("[v1becode] Avatar error: " .. tostring(err))
+        if not Library.Unloaded then
+            pcall(function()
+                Info:AddLabel("Avatar failed to load. See F9 console.", true)
+            end)
+        end
+    end
+end)
+print("[v1becode] UI initialized | executions: " .. Executions .. " | executor: " .. Executor)
 
